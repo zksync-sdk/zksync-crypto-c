@@ -1,0 +1,16 @@
+[package]
+name = "zks-crypto"
+version = "0.1.0"
+authors = ["Vitaly Drogan <vd@matterlabs.dev>"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+franklin_crypto = { package = "franklin-crypto", git = "https://github.com/matter-labs/franklin-crypto.git", branch="check-franklin-circuit-transpile"}
+sha2 = "0.8"
+libc = "0.2"
+
+[build-dependencies]
+cbindgen = "0.14"
