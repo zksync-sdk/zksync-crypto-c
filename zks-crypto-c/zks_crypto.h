@@ -38,6 +38,7 @@
 
 typedef enum MUSIG_SIGN_RES {
   MUSIG_SIGN_OK = 0,
+  MUSIG_SIGN_MSG_TOO_LONG,
 } MUSIG_SIGN_RES;
 
 typedef enum PRIVATE_KEY_FROM_SEED_RES {
@@ -87,7 +88,7 @@ PRIVATE_KEY_FROM_SEED_RES zks_crypto_private_key_from_seed(const uint8_t *seed,
 PUBLIC_KEY_FROM_PRIVATE_RES zks_crypto_private_key_to_public_key(const ZksPrivateKey *private_key,
                                                                  ZksPackedPublicKey *public_key);
 
-PUBKEY_HASH_FROM_PUBKEY_RES zks_crypto_public_key_to_pubkey_hash(const ZksPackedPublicKey *private_key,
+PUBKEY_HASH_FROM_PUBKEY_RES zks_crypto_public_key_to_pubkey_hash(const ZksPackedPublicKey *public_key,
                                                                  ZksPubkeyHash *pubkey_hash);
 
 /**
@@ -101,10 +102,5 @@ MUSIG_SIGN_RES zks_crypto_sign_musig(const ZksPrivateKey *private_key,
                                      const uint8_t *msg,
                                      size_t msg_len,
                                      ZksSignature *signature_output);
-
-MUSIG_SIGN_RES zks_crypto_verify_musig(const ZksPackedPublicKey *public_key,
-                                       const uint8_t *msg,
-                                       size_t msg_len,
-                                       const ZksSignature *signature_out);
 
 #endif /* ZKS_CRYPTO_H */

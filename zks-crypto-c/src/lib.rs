@@ -1,3 +1,4 @@
+#![allow(non_camel_case_types)]
 mod utils;
 
 /// Byte length of the public key
@@ -13,10 +14,10 @@ pub const MAX_SIGNED_MESSAGE_LEN: usize = 92;
 
 use franklin_crypto::{
     bellman::pairing::bn256::{Bn256 as Engine, Fr},
-    rescue::bn256::Bn256RescueParams,
     jubjub::JubjubEngine,
+    rescue::bn256::Bn256RescueParams,
 };
-pub(crate)type Fs = <Engine as JubjubEngine>::Fs;
+pub(crate) type Fs = <Engine as JubjubEngine>::Fs;
 
 // Thread local storage of the precomputed parameters.
 thread_local! {
@@ -24,16 +25,13 @@ thread_local! {
     pub static RESCUE_PARAMS: Bn256RescueParams = Bn256RescueParams::new_checked_2_into_1();
 }
 
-use franklin_crypto::{
-    alt_babyjubjub::{fs::FsRepr, AltJubjubBn256, FixedGenerators},
-    bellman::pairing::ff::{PrimeField, PrimeFieldRepr},
-    eddsa::{PrivateKey, PublicKey, Seed},
-};
+use franklin_crypto::alt_babyjubjub::AltJubjubBn256;
 
 // use crate::utils::{pub_key_hash, rescue_hash_tx_msg};
-use sha2::{Digest, Sha256};
-use std::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
-use crate::utils::{pub_key_hash, read_signing_key, rescue_hash_tx_msg, private_key_from_seed};
+use crate::utils::{
+    private_key_from_seed, private_key_to_public_key, public_key_to_pubkey_hash, sign_musig_rescue,
+};
+use std::ptr::slice_from_raw_parts;
 
 /// Initializes thread local storage of the parameters used for calculations.
 /// Calling this before other calls is optional since parameters will be initialized when needed.
@@ -47,24 +45,23 @@ pub extern "C" fn zks_crypto_init() {
 
 #[repr(C)]
 pub struct ZksPrivateKey {
-    pub data: [u8; PRIVATE_KEY_LEN]
+    pub data: [u8; PRIVATE_KEY_LEN],
 }
 
 #[repr(C)]
 pub struct ZksPackedPublicKey {
-    pub data: [u8; PUBLIC_KEY_LEN]
+    pub data: [u8; PUBLIC_KEY_LEN],
 }
 
 #[repr(C)]
 pub struct ZksPubkeyHash {
-    pub data: [u8; PUBKEY_HASH_LEN]
+    pub data: [u8; PUBKEY_HASH_LEN],
 }
 
 #[repr(C)]
 pub struct ZksSignature {
-    pub data: [u8; PACKED_SIGNATURE_LEN]
+    pub data: [u8; PACKED_SIGNATURE_LEN],
 }
-
 
 #[repr(C)]
 pub enum PRIVATE_KEY_FROM_SEED_RES {
@@ -78,15 +75,12 @@ pub extern "C" fn zks_crypto_private_key_from_seed(
     seed_len: libc::size_t,
     private_key: *mut ZksPrivateKey,
 ) -> PRIVATE_KEY_FROM_SEED_RES {
-
     if seed_len < 32 {
         return PRIVATE_KEY_FROM_SEED_RES::PRIVATE_KEY_FROM_SEED_SEED_TOO_SHORT;
     };
     let seed = slice_from_raw_parts(seed, seed_len as usize);
 
-    let raw_private_key = unsafe {
-        private_key_from_seed(&*seed)
-    };
+    let raw_private_key = unsafe { private_key_from_seed(&*seed) };
 
     unsafe {
         (*private_key).data.copy_from_slice(&raw_private_key);
@@ -103,11 +97,11 @@ pub extern "C" fn zks_crypto_private_key_to_public_key(
     private_key: *const ZksPrivateKey,
     public_key: *mut ZksPackedPublicKey,
 ) -> PUBLIC_KEY_FROM_PRIVATE_RES {
-    // let out_public_key = JUBJUB_PARAMS.with(|params| PublicKey::from_private(&private_key, p_g, params));
-    // unsafe {
-    //     out_public_key.write(&mut (*public_key).data).expect("failed to write pubkey to packed_point");
-    // }
-    return PUBLIC_KEY_FROM_PRIVATE_RES::PUBLIC_KEY_FROM_PRIVATE_OK;
+    unsafe {
+        let out_public_key = private_key_to_public_key(&(*private_key).data);
+        (*public_key).data.copy_from_slice(&out_public_key);
+    }
+    PUBLIC_KEY_FROM_PRIVATE_RES::PUBLIC_KEY_FROM_PRIVATE_OK
 }
 
 #[repr(C)]
@@ -116,25 +110,21 @@ pub enum PUBKEY_HASH_FROM_PUBKEY_RES {
 }
 #[no_mangle]
 pub extern "C" fn zks_crypto_public_key_to_pubkey_hash(
-    private_key: *const ZksPackedPublicKey,
+    public_key: *const ZksPackedPublicKey,
     pubkey_hash: *mut ZksPubkeyHash,
 ) -> PUBKEY_HASH_FROM_PUBKEY_RES {
-    // let p_g = FixedGenerators::SpendingKeyGenerator;
-    //
-    // let sk = unsafe { read_signing_key(&(*private_key).data) };
-    //
-    // let pubkey = JUBJUB_PARAMS.with(|params| PublicKey::from_private(&sk, p_g, params));
-    // let pubkey_hash_data = pub_key_hash(&pubkey);
-    //
-    // unsafe {
-    //     (*pubkey_hash).data.copy_from_slice(&pubkey_hash_data);
-    // }
-    return PUBKEY_HASH_FROM_PUBKEY_RES::PUBKEY_HASH_FROM_PUBKEY_OK;
+    unsafe {
+        let res_pubkey_hash = public_key_to_pubkey_hash(&(*public_key).data);
+        println!("res pkh {:?}", res_pubkey_hash);
+        (*pubkey_hash).data.copy_from_slice(&res_pubkey_hash);
+    }
+    PUBKEY_HASH_FROM_PUBKEY_RES::PUBKEY_HASH_FROM_PUBKEY_OK
 }
 
 #[repr(C)]
 pub enum MUSIG_SIGN_RES {
     MUSIG_SIGN_OK = 0,
+    MUSIG_SIGN_MSG_TOO_LONG,
 }
 /// We use musig Schnorr signature scheme.
 /// It is impossible to restore signer for signature, that is why we provide public key of the signer
@@ -148,86 +138,13 @@ pub extern "C" fn zks_crypto_sign_musig(
     msg_len: libc::size_t,
     signature_output: *mut ZksSignature,
 ) -> MUSIG_SIGN_RES {
-    // let mut packed_full_signature = Vec::with_capacity(PACKED_POINT_SIZE + PACKED_SIGNATURE_SIZE);
-    // //
-    // let p_g = FixedGenerators::SpendingKeyGenerator;
-    // let private_key = slice_from_raw_parts(private_key, 32);
-    // let private_key = unsafe { read_signing_key(&*private_key) };
-    //
-    // {
-    //     let public_key =
-    //         JUBJUB_PARAMS.with(|params| PublicKey::from_private(&private_key, p_g, params));
-    //     public_key
-    //         .write(&mut packed_full_signature)
-    //         .expect("failed to write pubkey to packed_point");
-    // };
-    // //
-    // let signature = JUBJUB_PARAMS.with(|jubjub_params| {
-    //     RESCUE_PARAMS.with(|rescue_params| {
-    //         let msg = slice_from_raw_parts(msg, msg_len as usize);
-    //         let hashed_msg = unsafe { rescue_hash_tx_msg(&*msg) };
-    //         let seed = Seed::deterministic_seed(&private_key, &hashed_msg);
-    //         private_key.musig_rescue_sign(&hashed_msg, &seed, p_g, rescue_params, jubjub_params)
-    //     })
-    // });
-    //
-    // signature
-    //     .r
-    //     .write(&mut packed_full_signature)
-    //     .expect("failed to write signature");
-    // signature
-    //     .s
-    //     .into_repr()
-    //     .write_le(&mut packed_full_signature)
-    //     .expect("failed to write signature repr");
-    //
-    // assert_eq!(
-    //     packed_full_signature.len(),
-    //     PACKED_POINT_SIZE + PACKED_SIGNATURE_SIZE,
-    //     "incorrect signature size when signing"
-    // );
-    //
-    // let signature_output = slice_from_raw_parts_mut(signature_output, 96);
-    // unsafe {
-    //     (*signature_output).copy_from_slice(&packed_full_signature);
-    // }
-    return MUSIG_SIGN_RES::MUSIG_SIGN_OK;
-}
-
-#[no_mangle]
-pub extern "C" fn zks_crypto_verify_musig(
-    public_key: *const ZksPackedPublicKey,
-    msg: *const u8,
-    msg_len: libc::size_t,
-    signature_out: *const ZksSignature,
-) -> MUSIG_SIGN_RES {
-    // let mut packed_full_signature = Vec::with_capacity(PACKED_SIGNATURE_LEN);
-    // //
-    // let p_g = FixedGenerators::SpendingKeyGenerator;
-    // let private_key = slice_from_raw_parts(private_key, 32);
-    // let private_key = unsafe { read_signing_key(&*private_key) };
-    // //
-    // let signature = JUBJUB_PARAMS.with(|jubjub_params| {
-    //     RESCUE_PARAMS.with(|rescue_params| {
-    //         let msg = slice_from_raw_parts(msg, msg_len as usize);
-    //         let hashed_msg = unsafe { rescue_hash_tx_msg(&*msg) };
-    //         let seed = Seed::deterministic_seed(&private_key, &hashed_msg);
-    //         private_key.musig_rescue_sign(&hashed_msg, &seed, p_g, rescue_params, jubjub_params)
-    //     })
-    // });
-    //
-    // signature
-    //     .r
-    //     .write(&mut packed_full_signature)
-    //     .expect("failed to write signature");
-    // signature
-    //     .s
-    //     .into_repr()
-    //     .write_le(&mut packed_full_signature)
-    //     .expect("failed to write signature repr");
-    //
-    // unsafe {
-    //     (*signature_out).data.copy_from_slice(&packed_full_signature);
-    // }
-    return MUSIG_SIGN_RES::MUSIG_SIGN_OK;
+    if msg_len > MAX_SIGNED_MESSAGE_LEN {
+        return MUSIG_SIGN_RES::MUSIG_SIGN_MSG_TOO_LONG;
+    }
+    let msg = slice_from_raw_parts(msg, msg_len as usize);
+    unsafe {
+        let signature = sign_musig_rescue(&(*private_key).data, &*msg);
+        (*signature_output).data.copy_from_slice(&signature);
+    }
+    MUSIG_SIGN_RES::MUSIG_SIGN_OK
 }

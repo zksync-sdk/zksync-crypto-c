@@ -1,15 +1,15 @@
-use crate::{RESCUE_PARAMS, Fs};
-use crate::{Engine, Fr};
-use sha2::{Digest, Sha256};
+use crate::{Engine, Fr, PACKED_SIGNATURE_LEN};
+use crate::{Fs, JUBJUB_PARAMS, RESCUE_PARAMS};
 use franklin_crypto::{
-    alt_babyjubjub::{fs::FsRepr, AltJubjubBn256, FixedGenerators},
+    alt_babyjubjub::{fs::FsRepr, FixedGenerators},
     bellman::{pairing::ff::PrimeField, BitIterator, PrimeFieldRepr},
     circuit::multipack,
-    rescue::rescue_hash,
     eddsa::{PrivateKey, PublicKey, Seed},
+    rescue::rescue_hash,
 };
+use sha2::{Digest, Sha256};
 
-pub(crate) fn bytes_into_be_bits(bytes: &[u8]) -> Vec<bool> {
+pub fn bytes_into_be_bits(bytes: &[u8]) -> Vec<bool> {
     let mut bits = Vec::with_capacity(bytes.len() * 8);
     for byte in bytes {
         let mut temp = *byte;
@@ -21,7 +21,7 @@ pub(crate) fn bytes_into_be_bits(bytes: &[u8]) -> Vec<bool> {
     bits
 }
 
-pub(crate) fn pack_bits_into_bytes(bits: Vec<bool>) -> Vec<u8> {
+pub fn pack_bits_into_bytes(bits: Vec<bool>) -> Vec<u8> {
     let mut message_bytes: Vec<u8> = Vec::with_capacity(bits.len() / 8);
     let byte_chunks = bits.chunks(8);
     for byte_chunk in byte_chunks {
@@ -36,14 +36,14 @@ pub(crate) fn pack_bits_into_bytes(bits: Vec<bool>) -> Vec<u8> {
     message_bytes
 }
 
-pub(crate) fn append_le_fixed_width(content: &mut Vec<bool>, x: &Fr, width: usize) {
+pub fn append_le_fixed_width(content: &mut Vec<bool>, x: &Fr, width: usize) {
     let mut token_bits: Vec<bool> = BitIterator::new(x.into_repr()).collect();
     token_bits.reverse();
     token_bits.resize(width, false);
     content.extend(token_bits);
 }
 
-pub(crate) fn le_bit_vector_into_bytes(bits: &[bool]) -> Vec<u8> {
+pub fn le_bit_vector_into_bytes(bits: &[bool]) -> Vec<u8> {
     let mut bytes: Vec<u8> = Vec::with_capacity(bits.len() / 8);
 
     let byte_chunks = bits.chunks(8);
@@ -62,11 +62,15 @@ pub(crate) fn le_bit_vector_into_bytes(bits: &[bool]) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn pub_key_hash(pub_key: &PublicKey<Engine>) -> Vec<u8> {
+pub fn pub_key_hash(pub_key: &PublicKey<Engine>) -> Vec<u8> {
     let (pub_x, pub_y) = pub_key.0.into_xy();
     let pub_key_hash = rescue_hash_elements(&[pub_x, pub_y]);
     let mut pub_key_hash_bits = Vec::with_capacity(super::PUBKEY_HASH_LEN * 8);
-    append_le_fixed_width(&mut pub_key_hash_bits, &pub_key_hash, super::PUBKEY_HASH_LEN);
+    append_le_fixed_width(
+        &mut pub_key_hash_bits,
+        &pub_key_hash,
+        super::PUBKEY_HASH_LEN * 8,
+    );
     let mut bytes = le_bit_vector_into_bytes(&pub_key_hash_bits);
     bytes.reverse();
     bytes
@@ -89,7 +93,7 @@ fn rescue_hash_elements(input: &[Fr]) -> Fr {
     })
 }
 
-pub(crate) fn rescue_hash_tx_msg(msg: &[u8]) -> Vec<u8> {
+pub fn rescue_hash_tx_msg(msg: &[u8]) -> Vec<u8> {
     let mut msg_bits = bytes_into_be_bits(msg);
     msg_bits.resize(super::MAX_SIGNED_MESSAGE_LEN, false);
     let hash_fr = rescue_hash_fr(msg_bits);
@@ -98,7 +102,7 @@ pub(crate) fn rescue_hash_tx_msg(msg: &[u8]) -> Vec<u8> {
     pack_bits_into_bytes(hash_bits)
 }
 
-pub(crate) fn read_signing_key(private_key: &[u8]) -> PrivateKey<Engine> {
+pub fn read_signing_key(private_key: &[u8]) -> PrivateKey<Engine> {
     let mut fs_repr = FsRepr::default();
     fs_repr
         .read_be(private_key)
@@ -106,14 +110,14 @@ pub(crate) fn read_signing_key(private_key: &[u8]) -> PrivateKey<Engine> {
     PrivateKey::<Engine>(Fs::from_repr(fs_repr).expect("couldn't read private key from repr"))
 }
 
-pub(crate) fn private_key_from_seed(seed: &[u8]) -> Vec<u8> {
+pub fn private_key_from_seed(seed: &[u8]) -> Vec<u8> {
     let sha256_bytes = |input: &[u8]| -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.input(input);
         hasher.result().to_vec()
     };
 
-    let mut effective_seed = unsafe { sha256_bytes(&*seed) };
+    let mut effective_seed = sha256_bytes(seed);
 
     loop {
         let raw_priv_key = sha256_bytes(&effective_seed);
@@ -126,5 +130,56 @@ pub(crate) fn private_key_from_seed(seed: &[u8]) -> Vec<u8> {
         } else {
             effective_seed = raw_priv_key;
         }
-    };
+    }
+}
+
+pub fn private_key_to_public_key(private_key: &[u8]) -> Vec<u8> {
+    let p_g = FixedGenerators::SpendingKeyGenerator;
+    let mut fs_repr = FsRepr::default();
+    fs_repr
+        .read_be(private_key)
+        .expect("failed to read raw_priv_key");
+    let private_key =
+        PrivateKey::<Engine>(Fs::from_repr(fs_repr).expect("failed to get private key from bytes"));
+
+    let mut result = Vec::new();
+    let public_key =
+        JUBJUB_PARAMS.with(|params| PublicKey::from_private(&private_key, p_g, params));
+    public_key
+        .write(&mut result)
+        .expect("failed to write pubkey to packed_point");
+    result
+}
+
+pub fn public_key_to_pubkey_hash(public_key: &[u8]) -> Vec<u8> {
+    let public_key = JUBJUB_PARAMS
+        .with(|params| PublicKey::read(public_key, params))
+        .expect("failed to read public key");
+    pub_key_hash(&public_key)
+}
+
+pub fn sign_musig_rescue(private_key: &[u8], msg: &[u8]) -> Vec<u8> {
+    let mut packed_full_signature = Vec::with_capacity(PACKED_SIGNATURE_LEN);
+    //
+    let p_g = FixedGenerators::SpendingKeyGenerator;
+    let private_key = read_signing_key(private_key);
+
+    let signature = JUBJUB_PARAMS.with(|jubjub_params| {
+        RESCUE_PARAMS.with(|rescue_params| {
+            let hashed_msg = rescue_hash_tx_msg(&msg);
+            let seed = Seed::deterministic_seed(&private_key, &hashed_msg);
+            private_key.musig_rescue_sign(&hashed_msg, &seed, p_g, rescue_params, jubjub_params)
+        })
+    });
+
+    signature
+        .r
+        .write(&mut packed_full_signature)
+        .expect("failed to write signature");
+    signature
+        .s
+        .into_repr()
+        .write_le(&mut packed_full_signature)
+        .expect("failed to write signature repr");
+    packed_full_signature
 }
