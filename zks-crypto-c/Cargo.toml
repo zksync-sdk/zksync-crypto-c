@@ -12,5 +12,9 @@ franklin_crypto = { package = "franklin-crypto", git = "https://github.com/matte
 sha2 = "0.8"
 libc = "0.2"
 
+[dev-dependencies]
+tiny-keccak = "1.4.2"
+hex = "*"
+
 [build-dependencies]
 cbindgen = "0.14"
