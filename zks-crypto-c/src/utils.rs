@@ -95,7 +95,8 @@ fn rescue_hash_elements(input: &[Fr]) -> Fr {
 
 pub fn rescue_hash_tx_msg(msg: &[u8]) -> Vec<u8> {
     let mut msg_bits = bytes_into_be_bits(msg);
-    msg_bits.resize(super::MAX_SIGNED_MESSAGE_LEN, false);
+    let max_bit_length = super::MAX_SIGNED_MESSAGE_LEN * 8;
+    msg_bits.resize(max_bit_length, false);
     let hash_fr = rescue_hash_fr(msg_bits);
     let mut hash_bits = Vec::new();
     append_le_fixed_width(&mut hash_bits, &hash_fr, 256);
@@ -182,4 +183,29 @@ pub fn sign_musig_rescue(private_key: &[u8], msg: &[u8]) -> Vec<u8> {
         .write_le(&mut packed_full_signature)
         .expect("failed to write signature repr");
     packed_full_signature
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_signature() {
+        let seed = tiny_keccak::keccak256(&[0x01u8]);
+        let private_key = private_key_from_seed(&seed);
+        let expected_private_key =
+            hex::decode("017cc1f76909503405ea0c7b143c546e6ab884b491cc3da42a68503607fbfb27")
+                .unwrap();
+        assert_eq!(private_key, expected_private_key,);
+
+        let pubkey = private_key_to_public_key(&private_key);
+        let expected_pubkey =
+            hex::decode("cc590cd8d0339c3b69d12eaa6a3986f1f90db0c9e318211e62daa9f0c031579e")
+                .unwrap();
+        assert_eq!(pubkey, expected_pubkey);
+
+        let signature = sign_musig_rescue(&private_key, &[0x01u8]);
+        let expected_signature = hex::decode("3ac38110c4460805a00b5e5bd397f8b972f2b0c0c16e7f5f680cb483be0c05147196b2e120b4c91ec8aa1fd4eeb7c21b06d688be113a45d89161b95ff6bfc705").unwrap();
+        assert_eq!(signature, expected_signature);
+    }
 }

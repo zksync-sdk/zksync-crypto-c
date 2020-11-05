@@ -947,6 +947,8 @@ version = "0.1.0"
 dependencies = [
  "cbindgen",
  "franklin-crypto",
+ "hex",
  "libc",
  "sha2",
+ "tiny-keccak",
 ]
