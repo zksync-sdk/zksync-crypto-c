@@ -1,10 +1,10 @@
-use crate::{Engine, Fr, PACKED_SIGNATURE_LEN};
+use crate::{Engine, Fr, PACKED_SIGNATURE_LEN, PUBLIC_KEY_LEN};
 use crate::{Fs, JUBJUB_PARAMS, RESCUE_PARAMS};
 use franklin_crypto::{
-    alt_babyjubjub::{fs::FsRepr, FixedGenerators},
+    alt_babyjubjub::{edwards::Point, fs::FsRepr, AltJubjubBn256, FixedGenerators, Unknown},
     bellman::{pairing::ff::PrimeField, BitIterator, PrimeFieldRepr},
     circuit::multipack,
-    eddsa::{PrivateKey, PublicKey, Seed},
+    eddsa::{PrivateKey, PublicKey, Seed, Signature},
     rescue::rescue_hash,
 };
 use sha2::{Digest, Sha256};
@@ -167,7 +167,7 @@ pub fn sign_musig_rescue(private_key: &[u8], msg: &[u8]) -> Vec<u8> {
 
     let signature = JUBJUB_PARAMS.with(|jubjub_params| {
         RESCUE_PARAMS.with(|rescue_params| {
-            let hashed_msg = rescue_hash_tx_msg(&msg);
+            let hashed_msg = rescue_hash_tx_msg(msg);
             let seed = Seed::deterministic_seed(&private_key, &hashed_msg);
             private_key.musig_rescue_sign(&hashed_msg, &seed, p_g, rescue_params, jubjub_params)
         })
@@ -183,6 +183,31 @@ pub fn sign_musig_rescue(private_key: &[u8], msg: &[u8]) -> Vec<u8> {
         .write_le(&mut packed_full_signature)
         .expect("failed to write signature repr");
     packed_full_signature
+}
+
+pub fn verify_musig_rescue(msg: &[u8], public_key: &[u8], signature: &[u8]) -> bool {
+    let hashed_msg = rescue_hash_tx_msg(msg);
+    let p_g = FixedGenerators::SpendingKeyGenerator;
+    let result = JUBJUB_PARAMS.with(|jubjub_params| {
+        let pub_key = PublicKey::read(&public_key[0..PUBLIC_KEY_LEN], jubjub_params).unwrap();
+        let signature = into_signature(signature, jubjub_params);
+        let r = RESCUE_PARAMS.with(|rescue_params| {
+            pub_key.verify_musig_rescue(&hashed_msg, &signature, p_g, rescue_params, jubjub_params)
+        });
+
+        r
+    });
+
+    result
+}
+
+fn into_signature(signature: &[u8], params: &AltJubjubBn256) -> Signature<Engine> {
+    let r: Point<Engine, Unknown> = Point::read(&signature[..32], params).unwrap();
+    let mut s_repr = <Fs as PrimeField>::Repr::default();
+    s_repr.read_le(&signature[32..]).unwrap();
+    let s = Fs::from_repr(s_repr).unwrap();
+
+    Signature { r, s }
 }
 
 #[cfg(test)]
@@ -207,5 +232,16 @@ mod tests {
         let signature = sign_musig_rescue(&private_key, &[0x01u8]);
         let expected_signature = hex::decode("3ac38110c4460805a00b5e5bd397f8b972f2b0c0c16e7f5f680cb483be0c05147196b2e120b4c91ec8aa1fd4eeb7c21b06d688be113a45d89161b95ff6bfc705").unwrap();
         assert_eq!(signature, expected_signature);
+    }
+
+    #[test]
+    fn test_verify() {
+        let signature = hex::decode("3ac38110c4460805a00b5e5bd397f8b972f2b0c0c16e7f5f680cb483be0c05147196b2e120b4c91ec8aa1fd4eeb7c21b06d688be113a45d89161b95ff6bfc705").unwrap();
+        let pubkey =
+            hex::decode("cc590cd8d0339c3b69d12eaa6a3986f1f90db0c9e318211e62daa9f0c031579e")
+                .unwrap();
+
+        let result = verify_musig_rescue(&[0x01u8], &pubkey, &signature);
+        assert!(result);
     }
 }
