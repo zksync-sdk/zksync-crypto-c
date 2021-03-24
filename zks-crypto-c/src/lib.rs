@@ -26,6 +26,7 @@ thread_local! {
 }
 
 use franklin_crypto::alt_babyjubjub::AltJubjubBn256;
+use utils::verify_musig_rescue;
 
 // use crate::utils::{pub_key_hash, rescue_hash_tx_msg};
 use crate::utils::{
@@ -147,4 +148,26 @@ pub extern "C" fn zks_crypto_sign_musig(
         (*signature_output).data.copy_from_slice(&signature);
     }
     MUSIG_SIGN_RES::MUSIG_SIGN_OK
+}
+
+#[repr(C)]
+pub enum MUSIG_VERIFY_RES {
+    MUSIG_VERIFY_OK = 0,
+    MUSIG_VERIFY_FAILED
+}
+
+#[no_mangle]
+pub extern "C" fn zks_crypto_verify_musig(
+    msg: *const u8,
+    msg_len: libc::size_t,
+    public_key: *const ZksPackedPublicKey,
+    signature: *const ZksSignature,
+) -> MUSIG_VERIFY_RES {
+    let msg = slice_from_raw_parts(msg, msg_len as usize);
+    unsafe {
+        match verify_musig_rescue(&*msg, &(*public_key).data, &(*signature).data) {
+            true => MUSIG_VERIFY_RES::MUSIG_VERIFY_OK,
+            false => MUSIG_VERIFY_RES::MUSIG_VERIFY_FAILED,
+        }
+    }
 }
