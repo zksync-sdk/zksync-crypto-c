@@ -153,7 +153,7 @@ pub extern "C" fn zks_crypto_sign_musig(
 #[repr(C)]
 pub enum MUSIG_VERIFY_RES {
     MUSIG_VERIFY_OK = 0,
-    MUSIG_VERIFY_FAILED
+    MUSIG_VERIFY_FAILED,
 }
 
 #[no_mangle]

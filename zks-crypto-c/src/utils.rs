@@ -1,6 +1,12 @@
-use crate::{Engine, Fr, PACKED_SIGNATURE_LEN,  PUBLIC_KEY_LEN};
+use crate::{Engine, Fr, PACKED_SIGNATURE_LEN, PUBLIC_KEY_LEN};
 use crate::{Fs, JUBJUB_PARAMS, RESCUE_PARAMS};
-use franklin_crypto::{alt_babyjubjub::{AltJubjubBn256, FixedGenerators, Unknown, edwards::Point, fs::FsRepr}, bellman::{BitIterator, PrimeFieldRepr, pairing::ff::PrimeField}, circuit::multipack, eddsa::{PrivateKey, PublicKey, Seed, Signature}, rescue::rescue_hash};
+use franklin_crypto::{
+    alt_babyjubjub::{edwards::Point, fs::FsRepr, AltJubjubBn256, FixedGenerators, Unknown},
+    bellman::{pairing::ff::PrimeField, BitIterator, PrimeFieldRepr},
+    circuit::multipack,
+    eddsa::{PrivateKey, PublicKey, Seed, Signature},
+    rescue::rescue_hash,
+};
 use sha2::{Digest, Sha256};
 
 pub fn bytes_into_be_bits(bytes: &[u8]) -> Vec<bool> {
@@ -200,7 +206,7 @@ fn into_signature(signature: &[u8], params: &AltJubjubBn256) -> Signature<Engine
     let mut s_repr = <Fs as PrimeField>::Repr::default();
     s_repr.read_le(&signature[32..]).unwrap();
     let s = Fs::from_repr(s_repr).unwrap();
-    
+
     Signature { r, s }
 }
 
@@ -231,7 +237,9 @@ mod tests {
     #[test]
     fn test_verify() {
         let signature = hex::decode("3ac38110c4460805a00b5e5bd397f8b972f2b0c0c16e7f5f680cb483be0c05147196b2e120b4c91ec8aa1fd4eeb7c21b06d688be113a45d89161b95ff6bfc705").unwrap();
-        let pubkey = hex::decode("cc590cd8d0339c3b69d12eaa6a3986f1f90db0c9e318211e62daa9f0c031579e").unwrap();
+        let pubkey =
+            hex::decode("cc590cd8d0339c3b69d12eaa6a3986f1f90db0c9e318211e62daa9f0c031579e")
+                .unwrap();
 
         let result = verify_musig_rescue(&[0x01u8], &pubkey, &signature);
         assert!(result);
