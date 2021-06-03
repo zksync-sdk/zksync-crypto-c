@@ -36,6 +36,11 @@
  */
 #define PUBLIC_KEY_LEN 32
 
+/**
+ * Maximum byte length of the rescue hash.
+ */
+#define RESCUE_HASH_LEN 31
+
 typedef enum MUSIG_SIGN_RES {
   MUSIG_SIGN_OK = 0,
   MUSIG_SIGN_MSG_TOO_LONG,
@@ -62,6 +67,10 @@ typedef enum PUBLIC_KEY_FROM_PRIVATE_RES {
   PUBLIC_KEY_FROM_PRIVATE_OK = 0,
 } PUBLIC_KEY_FROM_PRIVATE_RES;
 
+typedef struct ZksResqueHash {
+  uint8_t data[RESCUE_HASH_LEN];
+} ZksResqueHash;
+
 typedef struct ZksPrivateKey {
   uint8_t data[PRIVATE_KEY_LEN];
 } ZksPrivateKey;
@@ -77,6 +86,8 @@ typedef struct ZksPubkeyHash {
 typedef struct ZksSignature {
   uint8_t data[PACKED_SIGNATURE_LEN];
 } ZksSignature;
+
+void rescue_hash_orders(const uint8_t *msg, size_t msg_len, ZksResqueHash *hash);
 
 /**
  * Initializes thread local storage of the parameters used for calculations.

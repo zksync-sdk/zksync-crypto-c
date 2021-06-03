@@ -201,6 +201,29 @@ pub fn verify_musig_rescue(msg: &[u8], public_key: &[u8], signature: &[u8]) -> b
     result
 }
 
+pub fn rescue_hash_orders(msg: &[u8]) -> Vec<u8> {
+    assert_eq!(msg.len(), 178);
+    let msg_bits = bytes_into_be_bits(msg);
+    let hash_fr = rescue_hash_fr(msg_bits);
+    let hash_bits = get_bits_le_fixed(&hash_fr, 248);
+    pack_bits_into_bytes_le(&hash_bits)
+}
+
+pub fn pack_bits_into_bytes_le(bits: &[bool]) -> Vec<u8> {
+    let mut message_bytes: Vec<u8> = Vec::with_capacity(bits.len() / 8);
+    let byte_chunks = bits.chunks(8);
+    for byte_chunk in byte_chunks {
+        let mut byte = 0u8;
+        for (i, bit) in byte_chunk.iter().rev().enumerate() {
+            if *bit {
+                byte |= 1 << i;
+            }
+        }
+        message_bytes.push(byte);
+    }
+    message_bytes
+}
+
 fn into_signature(signature: &[u8], params: &AltJubjubBn256) -> Signature<Engine> {
     let r: Point<Engine, Unknown> = Point::read(&signature[..32], params).unwrap();
     let mut s_repr = <Fs as PrimeField>::Repr::default();
@@ -208,6 +231,21 @@ fn into_signature(signature: &[u8], params: &AltJubjubBn256) -> Signature<Engine
     let s = Fs::from_repr(s_repr).unwrap();
 
     Signature { r, s }
+}
+
+fn get_bits_le_fixed(fr: &Fr, size: usize) -> Vec<bool> {
+    let mut bits: Vec<bool> = Vec::with_capacity(size);
+    let repr = fr.into_repr();
+    let repr: &[u64] = repr.as_ref();
+    let n = std::cmp::min(repr.len() * 64, size);
+    for i in 0..n {
+        let part = i / 64;
+        let bit = i - (64 * part);
+        bits.push(repr[part] & (1 << bit) > 0);
+    }
+    let n = bits.len();
+    bits.extend((n..size).map(|_| false));
+    bits
 }
 
 #[cfg(test)]

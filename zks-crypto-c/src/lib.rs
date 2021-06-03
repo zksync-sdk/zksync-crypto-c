@@ -11,6 +11,8 @@ pub const PUBKEY_HASH_LEN: usize = 20;
 pub const PACKED_SIGNATURE_LEN: usize = 64;
 /// Maximum byte length of the message that can be signed.
 pub const MAX_SIGNED_MESSAGE_LEN: usize = 92;
+/// Maximum byte length of the rescue hash.
+pub const RESCUE_HASH_LEN: usize = 31;
 
 use franklin_crypto::{
     bellman::pairing::bn256::{Bn256 as Engine, Fr},
@@ -62,6 +64,11 @@ pub struct ZksPubkeyHash {
 #[repr(C)]
 pub struct ZksSignature {
     pub data: [u8; PACKED_SIGNATURE_LEN],
+}
+
+#[repr(C)]
+pub struct ZksResqueHash {
+    pub data: [u8; RESCUE_HASH_LEN],
 }
 
 #[repr(C)]
@@ -169,5 +176,18 @@ pub extern "C" fn zks_crypto_verify_musig(
             true => MUSIG_VERIFY_RES::MUSIG_VERIFY_OK,
             false => MUSIG_VERIFY_RES::MUSIG_VERIFY_FAILED,
         }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn rescue_hash_orders(
+    msg: *const u8,
+    msg_len: libc::size_t,
+    hash: *mut ZksResqueHash,
+) {
+    let msg = slice_from_raw_parts(msg, msg_len as usize);
+    unsafe {
+        let r = utils::rescue_hash_orders(&*msg);
+        (*hash).data.copy_from_slice(&r);
     }
 }
