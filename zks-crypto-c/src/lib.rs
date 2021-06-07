@@ -146,9 +146,6 @@ pub extern "C" fn zks_crypto_sign_musig(
     msg_len: libc::size_t,
     signature_output: *mut ZksSignature,
 ) -> MUSIG_SIGN_RES {
-    if msg_len > MAX_SIGNED_MESSAGE_LEN {
-        return MUSIG_SIGN_RES::MUSIG_SIGN_MSG_TOO_LONG;
-    }
     let msg = slice_from_raw_parts(msg, msg_len as usize);
     unsafe {
         let signature = sign_musig_rescue(&(*private_key).data, &*msg);
