@@ -123,7 +123,6 @@ pub extern "C" fn zks_crypto_public_key_to_pubkey_hash(
 ) -> PUBKEY_HASH_FROM_PUBKEY_RES {
     unsafe {
         let res_pubkey_hash = public_key_to_pubkey_hash(&(*public_key).data);
-        println!("res pkh {:?}", res_pubkey_hash);
         (*pubkey_hash).data.copy_from_slice(&res_pubkey_hash);
     }
     PUBKEY_HASH_FROM_PUBKEY_RES::PUBKEY_HASH_FROM_PUBKEY_OK
