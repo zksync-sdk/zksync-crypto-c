@@ -15,9 +15,10 @@ jobs:
     strategy:
       matrix:
         cfg:
-        - { os: ubuntu-latest, name: linux }
-        - { os: macos-latest, name: macos }
-        - { os: windows-latest, name: windows }
+        - { os: ubuntu-latest, name: linux, target: x86_64-unknown-linux-gnu }
+        - { os: macos-latest, name: macos, target: x86_64-apple-darwin }
+        - { os: macos-latest, name: macos, target: aarch64-apple-darwin }
+        - { os: windows-latest, name: windows, target: x86_64-pc-windows-gnu }
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -32,13 +33,15 @@ jobs:
       - name: Install dependencies
         if: ${{ matrix.cfg.os == 'ubuntu-latest' }}
         run: sudo apt-get update && sudo apt-get install -y build-essential
+      - name: Add target
+        run: rustup target add ${{ matrix.cfg.target }}
       - name: Build project using cargo
-        run: cargo build --release
+        run: cargo build --release --target ${{ matrix.cfg.target }}
       - name: Save artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: zks-crypto-${{ matrix.cfg.name }}-x64
-          path: target/release/*zks_crypto.*
+          name: zks-crypto-${{ matrix.cfg.target }}
+          path: target/${{ matrix.cfg.target }}/release/*zks_crypto.*
           if-no-files-found: ignore
   build_android:
     name: Build depends native library
